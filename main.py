@@ -63,7 +63,8 @@ def replace_NAN_to_column_mean(df, column):
 
 def load_data():
 
-    path = 'C:/Users/wnsk1/OneDrive/바탕 화면/pythonProject1/datasets'
+   #path = 'C:/Users/wnsk1/OneDrive/바탕 화면/pythonProject1/datasets' #집 PC
+    path = 'C:/projects/pythonProject2/Sogang_Bigdata/datasets' #숙소 PC
     df_list = []
 
     oil = pd.read_excel(path+'/주유소_평균_판매가격_20221109032912.xlsx')
@@ -136,6 +137,15 @@ def load_data():
     gold.index = new_gold_index
     df_list.append(gold)
 
+    population = pd.read_excel(path+'/대한민국인구조사.xls')
+    population = preprocessing_df(population)
+    population = population.fillna(method='ffill')
+    df_list.append(population)
+
+    sin_risk = pd.read_excel(path+'/신용위험.xlsx')
+    sin_risk = preprocessing_df(sin_risk)
+    df_list.append(sin_risk)
+
     CPI = pd.read_excel(path+'/소비자물가지수_2020100__20221109032835.xlsx')
     CPI = preprocessing_df(CPI, 0)
     df_list.append(CPI)
@@ -154,7 +164,7 @@ def scaling_data(df, target):
     fitted = min_max_scaler.fit(df)
     tmp = min_max_scaler.transform(df)
     df = pd.DataFrame(tmp, columns=df.columns, index=list(df.index.values))
-    df[target] = tmp_df[target]
+    #df[target] = tmp_df[target] 그냥 target도 같이 스케일링 해버리자
     return df
 
 def seperate_train_test(df, target, base):
@@ -168,6 +178,8 @@ def seperate_train_test(df, target, base):
 
     X_train = df.loc[:train_end, df.columns != target]
     X_test = df.loc[train_end:, df.columns != target]
+    #X_train = df.loc[:train_end]
+    #X_test = df.loc[train_end:]
     y_train = df.loc[df.index.values[predict_gap]:train_end_y, target]
     y_test = df.loc[train_end_y:, target]
 
@@ -183,15 +195,15 @@ def drop_column(X_train, X_test, column_list):
 if __name__ == '__main__':
 
     df_list = load_data()
-    df = pd.concat([df_list[0], df_list[1], df_list[2], df_list[3], df_list[4], df_list[5], df_list[6], df_list[7], df_list[8], df_list[9], df_list[10], df_list[11], df_list[12]], axis=1)
-    df.columns = ['deisel', 'loan_rate', 'currency_vol', 'current_account', 'PPI', 'Won/dollar_rate', 'CI', 'real_estate(volume)', 'real_estate(price)', 'kospi200', 'deposit_rate', 'gold', 'CPI']
+    df = pd.concat([df_list[0], df_list[1], df_list[2], df_list[3], df_list[4], df_list[5], df_list[6], df_list[7], df_list[8], df_list[9], df_list[10], df_list[11], df_list[12], df_list[13], df_list[14]], axis=1)
+    df.columns = ['deisel', 'loan_rate', 'currency_vol', 'current_account', 'PPI', 'Won/dollar_rate', 'CI', 'real_estate(volume)', 'real_estate(price)', 'kospi200', 'deposit_rate', 'gold', 'population','sin_risk','CPI']
     print(df)
 
     for item in df.columns:
         df = replace_NAN_to_column_mean(df, item)
     print(df)
 
-    target = 'Won/dollar_rate'
+    target = 'kospi200'
     # 예측하고자 하는 컬럼을 지정
 
     df = scaling_data(df, target)
@@ -199,18 +211,24 @@ if __name__ == '__main__':
     print(df)
 
     # tmp_df = df
-    # df = df.pct_change(periods=12).dropna()
+    # df = df.pct_change(periods=predict_gap).dropna()
+    # #데이터들을 이전 predict_gap 개월만큼의 변동율(수익율)로 변경
     # df = df.replace(np.inf, 0)
-    # df[target] = tmp_df[target]
+    # #df[target] = tmp_df[target]
     # print(df)
 
-    X_train, X_test, y_train, y_test = seperate_train_test(df, target, 170)
+    #X_train, X_test, y_train, y_test = seperate_train_test(df.iloc[:int(len(df)*0.7)], target, int(len(df)*0.7*0.8))
+    #검정용
+    X_train, X_test, y_train, y_test = seperate_train_test(df, target,int(len(df) * 0.7))
+    #시험용
     #166번째 인덱스를 기준으로 train set과 test set을 분리한다.
-    X_train, X_test = drop_column(X_train, X_test, [])
+    selected_columns = ['loan_rate', 'PPI', 'Won/dollar_rate', 'CI', 'deposit_rate','population', target]
+    drop_list = list(set(df.columns) - set(selected_columns))
+    X_train, X_test = drop_column(X_train, X_test, drop_list)
     #예측에 불필요한 변수들을 리스트에 담아 drop한다.
 
-    model_list = [LinearRegression(), Lasso(), ann.MLPRegressor(hidden_layer_sizes=(35,35,35)), RandomForestRegressor()]
-    model_dict = {'Linear' : model_list[0], 'Lasso':model_list[1], 'MLPRegressor':model_list[2], 'RandomForest':model_list[3]}
+    model_list = [LinearRegression(), ann.MLPRegressor(hidden_layer_sizes=(100,100,100)), RandomForestRegressor()]
+    model_dict = {'LinearRegression' : model_list[0], 'MLPRegeressor':model_list[1], 'RandomForestRegressor':model_list[2]}
     inv_model_dict = inv_map = {v: k for k, v in model_dict.items()}
     y_hat_list = list(0 for i in range(len(model_list)))
 
@@ -237,34 +255,9 @@ if __name__ == '__main__':
     model = sm.OLS(y_train.values, x).fit()
     print(model.summary())
 
-    #print(model_list[0].predict(X_test)[-predict_gap]*100)
-    #마지막 관측 데이터를 바탕으로 다음 번째의 CPI를 예측한다.
-
     for i, y_hat in enumerate(y_hat_list):
         MSE = mean_squared_error(y_hat, y_test)
         print(f'{inv_model_dict[model_list[i]]}s {MSE}')
 
-    # input_val = pd.DataFrame(X_test.loc['2022-10-01'])
-    # print(input_val)
-    # print(model_list[0].predict(input_val))
-
-    # df_diff1 = df.diff().dropna()
-    # df_diff2 = df_diff1.diff().dropna()
-    #
-    # model_fitted = VAR(df_diff2.loc[:'2019-12-01']).fit(maxlags=2, ic='aic')
-    # aa = model_fitted.plot_forecast(35)
-    # plt.show()
-    #
-    # print()
-    #
-    # aa = model_fitted.forecast_interval(model_fitted.endog[-model_fitted.k_ar :], 35, alpha=0.05)
-    # aa = pd.DataFrame(aa[0])
-    # aa.columns = df.columns
-    # aa = aa.loc[1:]
-    # aa.index = y_test.index
-    # print(aa)
-    #
-    # columns = 'gasoline'
-    # plt.plot(aa[columns])
-    # plt.plot(df.loc['2020-01-01':, columns])
-    # plt.show()
+    #print(model_list[0].predict(X_test)[-predict_gap]*100)
+    #마지막 관측 데이터를 바탕으로 다음 번째의 CPI를 예측한다.
